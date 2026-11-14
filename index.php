@@ -1,0 +1,772 @@
+<?php
+require_once 'db.php';
+
+// AJAX Request Handler
+if (isset($_GET['ajax_denom'])) {
+    $d = $_GET['ajax_denom'];
+    $stmt = $db->prepare("SELECT Denomination, DrawDate, BondNo, Series, DrawNo, Prize FROM prize_bonds WHERE Denomination = ? ORDER BY id DESC");
+    $stmt->execute([$d]);
+    $res = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    header('Content-Type: application/json');
+    echo json_encode($res);
+    exit;
+}
+
+$msg = "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['action']) && $_POST['action'] === 'single') {
+        $stmt = $db->prepare("INSERT INTO prize_bonds (Denomination, DrawDate, BondNo, Series, DrawNo, Prize) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->execute([
+            $_POST['Denomination'],
+            $_POST['DrawDate'],
+            $_POST['BondNo'],
+            $_POST['Series'] ?? '*',
+            $_POST['DrawNo'],
+            $_POST['Prize']
+        ]);
+        $msg = "Single Prize Bond successfully add ho gaya!";
+    } elseif (isset($_POST['action']) && $_POST['action'] === 'bulk') {
+        $denomination = $_POST['BulkDenomination'];
+        $drawDate = $_POST['BulkDrawDate'];
+        $drawNo = $_POST['BulkDrawNo'];
+        $series = $_POST['BulkSeries'] ?? '*';
+        $prize = $_POST['BulkPrize'];
+        $bondNumbers = explode("\n", $_POST['BondNumbers']);
+
+        $stmt = $db->prepare("INSERT INTO prize_bonds (Denomination, DrawDate, BondNo, Series, DrawNo, Prize) VALUES (?, ?, ?, ?, ?, ?)");
+        
+        $db->beginTransaction();
+        foreach ($bondNumbers as $bNo) {
+            $bNo = trim($bNo);
+            if (!empty($bNo)) {
+                $stmt->execute([$denomination, $drawDate, $bNo, $series, $drawNo, $prize]);
+            }
+        }
+        $db->commit();
+        $msg = "Bulk bonds successfully import ho gaye!";
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en" id="htmlRoot">
+<head>
+    <meta charset="UTF-8">
+    <title>Sadat Enterprises - Prize Bond System</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 27, 75, 0.8), rgba(49, 16, 66, 0.8));
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            overflow-x: hidden;
+        }
+
+        /* Sidebar Navigation with Vertical BND.jpg Image */
+        .sidebar {
+            width: 280px;
+            background: rgba(15, 23, 42, 0.95);
+            border-right: 1px solid rgba(255, 255, 255, 0.15);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            z-index: 10;
+            backdrop-filter: blur(12px);
+            overflow-y: auto;
+        }
+        .sidebar-brand {
+            font-size: 1.3rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #38bdf8, #c084fc, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 15px;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+        .sidebar-img-container {
+            width: 100%;
+            height: 140px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid rgba(56, 189, 248, 0.4);
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .sidebar-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .nav-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #cbd5e1;
+            padding: 12px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            text-align: left;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .nav-btn:hover, .nav-btn.active {
+            background: linear-gradient(135deg, #38bdf8, #6366f1);
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            margin-left: 280px;
+            flex: 1;
+            padding: 30px;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        /* Top Bar with Centered Welcome Message & Right Language Toggle */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            background: rgba(15, 23, 42, 0.85);
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            position: relative;
+        }
+        .welcome-msg {
+            color: #38bdf8;
+            font-weight: 700;
+            font-size: 1.05rem;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            width: max-content;
+        }
+        .top-bar-placeholder {
+            visibility: hidden;
+        }
+        .lang-btn {
+            background: linear-gradient(135deg, #f472b6, #c084fc);
+            color: #fff;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            margin-left: auto;
+        }
+        .lang-btn:hover { opacity: 0.9; transform: scale(1.05); }
+
+        /* CSS Fireworks Container */
+        #fireworks-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 99999; overflow: hidden; display: none;
+        }
+        .firework-spark {
+            position: absolute; width: 8px; height: 8px; border-radius: 50%;
+            animation: explode 1s ease-out forwards;
+        }
+        @keyframes explode {
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; }
+        }
+
+        /* Winner Popup Banner */
+        #winnerBanner {
+            position: fixed; top: 20%; left: 55%; transform: translate(-50%, -50%) scale(0);
+            background: linear-gradient(135deg, #38bdf8, #6366f1, #c084fc); padding: 20px 40px;
+            border-radius: 16px; font-size: 2rem; font-weight: bold; color: #fff; z-index: 100000;
+            box-shadow: 0 0 40px rgba(56, 189, 248, 0.8); transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-align: center; pointer-events: none;
+        }
+        #winnerBanner.show { transform: translate(-50%, -50%) scale(1); }
+
+        .section-panel { display: none; }
+        .section-panel.active { display: block; }
+
+        .glass-card {
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+        }
+
+        /* Centered Contact Section Styling */
+        .contact-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            margin-top: 15px;
+            text-align: center;
+        }
+        .contact-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 12px;
+            padding: 16px 30px;
+            width: 100%;
+            max-width: 600px;
+            transition: 0.3s;
+        }
+        .contact-box:hover {
+            border-color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1);
+            box-shadow: 0 4px 15px rgba(56, 189, 248, 0.25);
+        }
+        .contact-icon {
+            font-size: 1.6rem;
+            margin-bottom: 4px;
+        }
+        .contact-val {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #38bdf8;
+            margin-top: 4px;
+        }
+
+        h3 { margin-bottom: 15px; color: #38bdf8; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 8px; text-align: center; }
+        .bismillah-title {
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #38bdf8, #c084fc, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            margin-bottom: 10px;
+            letter-spacing: 1px;
+        }
+        label { display: block; margin-bottom: 3px; font-size: 0.9rem; color: #cbd5e1; font-weight: 600; }
+        input, select, textarea {
+            width: 100%; padding: 10px; margin-bottom: 15px; background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 8px; color: #fff; font-size: 0.95rem;
+        }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #38bdf8; }
+        button.action-btn {
+            background: linear-gradient(135deg, #38bdf8, #6366f1); color: white; border: none; padding: 10px 20px;
+            border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; width: 100%;
+        }
+        button.action-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.15); font-size: 0.95rem; }
+        th { background: rgba(255, 255, 255, 0.12); color: #38bdf8; }
+        tr:hover { background: rgba(255, 255, 255, 0.08); }
+        .alert { background: rgba(34, 197, 94, 0.25); border: 1px solid #22c55e; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; color: #86efac; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <!-- Fireworks Container & Winner Popup -->
+    <div id="fireworks-container"></div>
+    <div id="winnerBanner">🎉 BIG WINNER! 🎉</div>
+
+    <!-- Side Navigation Bar with Vertical BND.jpg Image -->
+    <div class="sidebar">
+        <div class="sidebar-brand">SADAT ENTERPRISES</div>
+        <div class="sidebar-img-container">
+            <img src="bnd.jpg" alt="Prize Bonds Collection" class="sidebar-img">
+        </div>
+        <div class="nav-menu">
+            <button class="nav-btn active" onclick="switchTab(event, 'dashboard-section')" id="tabDashboardBtn">🏠 Dashboard</button>
+            <button class="nav-btn" onclick="switchTab(event, 'search-section')" id="tabSearchBtn">🔍 Search Bonds</button>
+            <button class="nav-btn" onclick="switchTab(event, 'single-section')" id="tabSingleBtn">➕ Add Single Number</button>
+            <button class="nav-btn" onclick="switchTab(event, 'bulk-section')" id="tabBulkBtn">📦 Add Bulk Data</button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-content">
+        <!-- Top Bar with Centered Welcome Message & Right Language Toggle -->
+        <div class="top-bar">
+            <span class="top-bar-placeholder">Placeholder</span>
+            <span class="welcome-msg" id="welcomeText">⚡ Welcome to Sadat Enterprises System</span>
+            <button class="lang-btn" onclick="toggleLanguage()" id="langToggleBtn">اردو / English</button>
+        </div>
+
+        <?php if (!empty($msg)): ?>
+            <div class="alert"><?php echo $msg; ?></div>
+        <?php endif; ?>
+
+        <!-- 1. Dashboard Section with Contact & Location Details on Top -->
+        <div id="dashboard-section" class="section-panel active glass-card">
+            <h3 id="dashTitle" class="bismillah-title">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</h3>
+            <p id="dashSub" style="color: #cbd5e1; margin-bottom: 20px; text-align: center;">Prize Bond Management System preview aur official collection:</p>
+            
+            <!-- Centered Contact & Location Details on Top -->
+            <h3 id="dashContactTitle">📞 Contact & Location Details</h3>
+            <div class="contact-container">
+                <div class="contact-box">
+                    <div class="contact-icon">☎️</div>
+                    <label id="lblPhone">Landline Phone</label>
+                    <div class="contact-val">091-5277910</div>
+                </div>
+                <div class="contact-box">
+                    <div class="contact-icon">📱</div>
+                    <label id="lblMobile">Mobile Number</label>
+                    <div class="contact-val">0313-9222790</div>
+                </div>
+                <div class="contact-box">
+                    <div class="contact-icon">📍</div>
+                    <label id="lblAddress">Office Address</label>
+                    <div class="contact-val">SADAT ENTERPRISES OPPOSITE STATE BANK OF PAKISTAN PESHAWAR CANTT</div>
+                </div>
+            </div>
+
+            <p style="color: #94a3b8; font-size: 0.95rem; text-align: center; margin-top: 25px;" id="dashDesc">Aap yahan se apna system navigate kar sakte hain. Left menu se Search ya Add options select karein.</p>
+        </div>
+
+        <!-- 2. Search Section -->
+        <div id="search-section" class="section-panel glass-card">
+            <h3 id="searchTitle">🔍 Ultra-Fast Live Search & Filter</h3>
+            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 200px;">
+                    <label id="lblDenom">Select Denomination</label>
+                    <select id="filterDenom" onchange="fetchBondsData()">
+                        <option value="" id="optChoose">-- Choose Denomination --</option>
+                        <option value="100">Rs. 100</option>
+                        <option value="200">Rs. 200</option>
+                        <option value="750">Rs. 750</option>
+                        <option value="1500">Rs. 1500</option>
+                    </select>
+                </div>
+                <div style="flex: 2; min-width: 250px;">
+                    <label id="lblSearch">Type Bond Number (Max 6 Digits, Press Enter to Clear)</label>
+                    <input type="text" id="searchBondNo" maxlength="6" onkeyup="handleSearchInput(event)" placeholder="Max 6 digits..." disabled>
+                </div>
+            </div>
+
+            <!-- Data Grid Display inside Search -->
+            <div style="margin-top: 20px;">
+                <h3 id="gridTitle">📊 Prize Bonds Database Grid</h3>
+                <div style="overflow-x: auto;">
+                    <table id="bondsTable">
+                        <thead>
+                            <tr>
+                                <th id="thDenom">Denomination</th>
+                                <th id="thDate">DrawDate</th>
+                                <th id="thBondNo">BondNo</th>
+                                <th id="thSeries">Series</th>
+                                <th id="thDrawNo">DrawNo</th>
+                                <th id="thPrize">Prize</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr>
+                                <td colspan="6" style="text-align: center; color: #38bdf8; padding: 25px;" id="msgSelectPrompt">Meherbani karke upar se pehle koi Denomination select karein.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Add Single Number Section -->
+        <div id="single-section" class="section-panel glass-card">
+            <h3 id="singleTitle">➕ Add Single Prize Bond Number</h3>
+            <form method="POST" style="max-width: 600px; margin: 0 auto;">
+                <input type="hidden" name="action" value="single">
+                <label id="lblSingleDenom">Denomination</label>
+                <select name="Denomination" id="singleDenomSelect" onchange="updateSinglePrize()" required>
+                    <option value="100">Rs. 100</option>
+                    <option value="200">Rs. 200</option>
+                    <option value="750">Rs. 750</option>
+                    <option value="1500" selected>Rs. 1500</option>
+                </select>
+
+                <label id="lblDrawDate">Draw Date</label>
+                <input type="text" name="DrawDate" placeholder="e.g. 15-Nov-19" required>
+
+                <label id="lblBondNo">Bond No</label>
+                <input type="text" name="BondNo" maxlength="6" placeholder="e.g. 000059" required>
+
+                <label id="lblSeries">Series</label>
+                <input type="text" name="Series" value="*">
+
+                <label id="lblDrawNo">Draw No</label>
+                <input type="text" name="DrawNo" placeholder="e.g. 80" required>
+
+                <label id="lblPrize">Prize Amount</label>
+                <input type="text" name="Prize" id="singlePrizeInput" value="$18,500.00" required>
+
+                <button type="submit" class="action-btn" id="btnSaveSingle">Save Single Bond</button>
+            </form>
+        </div>
+
+        <!-- 4. Bulk Data Add Section -->
+        <div id="bulk-section" class="section-panel glass-card">
+            <h3 id="bulkTitle">📦 Bulk Data Add (Multiple Numbers)</h3>
+            <form method="POST" style="max-width: 600px; margin: 0 auto;">
+                <input type="hidden" name="action" value="bulk">
+                <label id="lblBulkDenom">Denomination</label>
+                <select name="BulkDenomination" id="bulkDenomSelect" onchange="updateBulkPrize()" required>
+                    <option value="100">Rs. 100</option>
+                    <option value="200">Rs. 200</option>
+                    <option value="750">Rs. 750</option>
+                    <option value="1500" selected>Rs. 1500</option>
+                </select>
+
+                <div style="display: flex; gap: 10px;">
+                    <div style="flex: 1;">
+                        <label id="lblBulkDrawDate">Draw Date</label>
+                        <input type="text" name="BulkDrawDate" placeholder="15-Nov-19" required>
+                    </div>
+                    <div style="flex: 1;">
+                        <label id="lblBulkDrawNo">Draw No</label>
+                        <input type="text" name="BulkDrawNo" placeholder="80" required>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <div style="flex: 1;">
+                        <label id="lblBulkSeries">Series</label>
+                        <input type="text" name="BulkSeries" value="*">
+                    </div>
+                    <div style="flex: 1;">
+                        <label id="lblBulkPrize">Prize Amount</label>
+                        <input type="text" name="BulkPrize" id="bulkPrizeInput" value="$18,500.00" required>
+                    </div>
+                </div>
+
+                <label id="lblBulkText">Bond Numbers (Paste each number on a new line)</label>
+                <textarea name="BondNumbers" rows="5" placeholder="000059&#10;000519&#10;000756" required></textarea>
+
+                <button type="submit" class="action-btn" id="btnImportBulk">Import Bulk Bonds</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let cachedBonds = [];
+        let currentLang = 'en';
+
+        const defaultPrizes = {
+            "100": "Rs. 700,000.00",
+            "200": "Rs. 750,000.00",
+            "750": "Rs. 1,500,000.00",
+            "1500": "$18,500.00"
+        };
+
+        function updateSinglePrize() {
+            let denom = document.getElementById("singleDenomSelect").value;
+            let prizeInput = document.getElementById("singlePrizeInput");
+            if (defaultPrizes[denom]) prizeInput.value = defaultPrizes[denom];
+        }
+
+        function updateBulkPrize() {
+            let denom = document.getElementById("bulkDenomSelect").value;
+            let prizeInput = document.getElementById("bulkPrizeInput");
+            if (defaultPrizes[denom]) prizeInput.value = defaultPrizes[denom];
+        }
+
+        function handleSearchInput(event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                document.getElementById("searchBondNo").value = "";
+                filterTableLocally();
+            } else {
+                filterTableLocally();
+            }
+        }
+
+        const translations = {
+            en: {
+                tabDashboardBtn: "🏠 Dashboard",
+                tabSearchBtn: "🔍 Search Bonds",
+                tabSingleBtn: "➕ Add Single Number",
+                tabBulkBtn: "📦 Add Bulk Data",
+                welcomeText: "⚡ Welcome to Sadat Enterprises System",
+                dashSub: "Prize Bond Management System preview and collection:",
+                dashDesc: "You can navigate your system from here. Select Search or Add options from the left menu.",
+                dashContactTitle: "📞 Contact & Location Details",
+                lblPhone: "Landline Phone",
+                lblMobile: "Mobile Number",
+                lblAddress: "Office Address",
+                searchTitle: "🔍 Ultra-Fast Live Search & Filter",
+                lblDenom: "Select Denomination",
+                optChoose: "-- Choose Denomination --",
+                lblSearch: "Type Bond Number (Max 6 Digits, Press Enter to Clear)",
+                singleTitle: "➕ Add Single Prize Bond Number",
+                lblSingleDenom: "Denomination",
+                lblDrawDate: "Draw Date",
+                lblBondNo: "Bond No",
+                lblSeries: "Series",
+                lblDrawNo: "Draw No",
+                lblPrize: "Prize Amount",
+                btnSaveSingle: "Save Single Bond",
+                bulkTitle: "📦 Bulk Data Add (Multiple Numbers)",
+                lblBulkDenom: "Denomination",
+                lblBulkDrawDate: "Draw Date",
+                lblBulkDrawNo: "Draw No",
+                lblBulkSeries: "Series",
+                lblBulkPrize: "Prize Amount",
+                lblBulkText: "Bond Numbers (Paste each number on a new line)",
+                btnImportBulk: "Import Bulk Bonds",
+                gridTitle: "📊 Prize Bonds Database Grid",
+                thDenom: "Denomination",
+                thDate: "DrawDate",
+                thBondNo: "BondNo",
+                thSeries: "Series",
+                thDrawNo: "DrawNo",
+                thPrize: "Prize",
+                msgSelectPrompt: "Meherbani karke upar se pehle koi Denomination select karein.",
+                loadingText: "Data load ho raha hai...",
+                noRecordText: "Is denomination mein koi record nahi mila."
+            },
+            ur: {
+                tabDashboardBtn: "🏠 ڈیش بورڈ",
+                tabSearchBtn: "🔍 بانڈز تلاش کریں",
+                tabSingleBtn: "➕ اکیلا نمبر شامل کریں",
+                tabBulkBtn: "📦 بلک ڈیٹا شامل کریں",
+                welcomeText: "⚡ سادات انٹرپرائزز سسٹم میں خوش آمدید",
+                dashSub: "پرائز بانڈ مینجمنٹ سسٹم کا منظر اور مجموعہ:",
+                dashDesc: "آپ بائیں مینو سے اپنے سسٹم کو چلا سکتے ہیں۔ تلاش یا اندراج کے لیے آپشن منتخب کریں۔",
+                dashContactTitle: "📞 رابطہ اور دفتر کا پتہ",
+                lblPhone: "لینڈ لائن فون",
+                lblMobile: "موبائل نمبر",
+                lblAddress: "دفتر کا پتہ",
+                searchTitle: "🔍 تیز ترین لائیو تلاش اور فلٹر",
+                lblDenom: "ڈالومینیشن منتخب کریں",
+                optChoose: "-- ڈالومینیشن منتخب کریں --",
+                lblSearch: "بانڈ نمبر ٹائپ کریں (زیادہ سے زیادہ 6 ہندسے، Enter سے صاف کریں)",
+                singleTitle: "➕ اکیلا پرائز بانڈ نمبر درج کریں",
+                lblSingleDenom: "ڈالومینیشن",
+                lblDrawDate: "قرعہ اندازی کی تاریخ",
+                lblBondNo: "بانڈ نمبر",
+                lblSeries: "سیریز",
+                lblDrawNo: "قرعہ نمبر",
+                lblPrize: "انعام کی رقم",
+                btnSaveSingle: "سنگل بانڈ محفوظ کریں",
+                bulkTitle: "📦 بلک ڈیٹا شامل کریں (متعدد نمبرز)",
+                lblBulkDenom: "ڈالومینیشن",
+                lblBulkDrawDate: "قرعہ اندازی کی تاریخ",
+                lblBulkDrawNo: "قرعہ نمبر",
+                lblBulkSeries: "سیریز",
+                lblBulkPrize: "انعام کی رقم",
+                lblBulkText: "بانڈ نمبرز (ہر نمبر نئی لائن پر پیسٹ کریں)",
+                btnImportBulk: "بلک بانڈز امپورٹ کریں",
+                gridTitle: "📊 پرائز بانڈز ڈیٹا بیس گرڈ",
+                thDenom: "ڈالومینیشن",
+                thDate: "تاریخ",
+                thBondNo: "بانڈ نمبر",
+                thSeries: "سیریز",
+                thDrawNo: "قرعہ نمبر",
+                thPrize: "انعام",
+                msgSelectPrompt: "براہ کرم اوپر سے کوئی ڈالومینیشن منتخب کریں۔",
+                loadingText: "ڈیٹا لوڈ ہو رہا ہے۔۔۔",
+                noRecordText: "اس ڈالومینیشن میں کوئی ریکارڈ نہیں ملا۔"
+            }
+        };
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'ur' : 'en';
+            let t = translations[currentLang];
+
+            document.getElementById("tabDashboardBtn").innerText = t.tabDashboardBtn;
+            document.getElementById("tabSearchBtn").innerText = t.tabSearchBtn;
+            document.getElementById("tabSingleBtn").innerText = t.tabSingleBtn;
+            document.getElementById("tabBulkBtn").innerText = t.tabBulkBtn;
+            document.getElementById("welcomeText").innerText = t.welcomeText;
+            document.getElementById("dashSub").innerText = t.dashSub;
+            document.getElementById("dashDesc").innerText = t.dashDesc;
+            document.getElementById("dashContactTitle").innerText = t.dashContactTitle;
+            document.getElementById("lblPhone").innerText = t.lblPhone;
+            document.getElementById("lblMobile").innerText = t.lblMobile;
+            document.getElementById("lblAddress").innerText = t.lblAddress;
+            document.getElementById("searchTitle").innerText = t.searchTitle;
+            document.getElementById("lblDenom").innerText = t.lblDenom;
+            document.getElementById("optChoose").innerText = t.optChoose;
+            document.getElementById("lblSearch").innerText = t.lblSearch;
+            
+            document.getElementById("singleTitle").innerText = t.singleTitle;
+            document.getElementById("lblSingleDenom").innerText = t.lblSingleDenom;
+            document.getElementById("lblDrawDate").innerText = t.lblDrawDate;
+            document.getElementById("lblBondNo").innerText = t.lblBondNo;
+            document.getElementById("lblSeries").innerText = t.lblSeries;
+            document.getElementById("lblDrawNo").innerText = t.lblDrawNo;
+            document.getElementById("lblPrize").innerText = t.lblPrize;
+            document.getElementById("btnSaveSingle").innerText = t.btnSaveSingle;
+
+            document.getElementById("bulkTitle").innerText = t.bulkTitle;
+            document.getElementById("lblBulkDenom").innerText = t.lblBulkDenom;
+            document.getElementById("lblBulkDrawDate").innerText = t.lblBulkDrawDate;
+            document.getElementById("lblBulkDrawNo").innerText = t.lblBulkDrawNo;
+            document.getElementById("lblBulkSeries").innerText = t.lblBulkSeries;
+            document.getElementById("lblBulkPrize").innerText = t.lblBulkPrize;
+            document.getElementById("lblBulkText").innerText = t.lblBulkText;
+            document.getElementById("btnImportBulk").innerText = t.btnImportBulk;
+
+            document.getElementById("gridTitle").innerText = t.gridTitle;
+            document.getElementById("thDenom").innerText = t.thDenom;
+            document.getElementById("thDate").innerText = t.thDate;
+            document.getElementById("thBondNo").innerText = t.thBondNo;
+            document.getElementById("thSeries").innerText = t.thSeries;
+            document.getElementById("thDrawNo").innerText = t.thDrawNo;
+            document.getElementById("thPrize").innerText = t.thPrize;
+
+            if (cachedBonds.length === 0) {
+                document.getElementById("msgSelectPrompt").innerText = t.msgSelectPrompt;
+            }
+        }
+
+        function switchTab(evt, sectionId) {
+            let panels = document.getElementsByClassName("section-panel");
+            for (let p of panels) p.classList.remove("active");
+            let buttons = document.getElementsByClassName("nav-btn");
+            for (let b of buttons) b.classList.remove("active");
+            document.getElementById(sectionId).classList.add("active");
+            evt.currentTarget.classList.add("active");
+        }
+
+        function fetchBondsData() {
+            let denom = document.getElementById("filterDenom").value;
+            let tbody = document.getElementById("tableBody");
+            let searchInput = document.getElementById("searchBondNo");
+            let t = translations[currentLang];
+
+            if (!denom) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #38bdf8; padding: 25px;" id="msgSelectPrompt">${t.msgSelectPrompt}</td></tr>`;
+                searchInput.disabled = true;
+                searchInput.value = "";
+                cachedBonds = [];
+                return;
+            }
+
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #cbd5e1; padding: 25px;">${t.loadingText}</td></tr>`;
+
+            let xhr = new XMLHttpRequest();
+            xhr.open("GET", "?ajax_denom=" + encodeURIComponent(denom), true);
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    try {
+                        cachedBonds = JSON.parse(xhr.responseText);
+                        renderTable(cachedBonds);
+                        searchInput.disabled = false;
+                        searchInput.focus();
+                    } catch(e) {
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 25px;">Error loading data.</td></tr>`;
+                    }
+                }
+            };
+            xhr.send();
+        }
+
+        function renderTable(data) {
+            let tbody = document.getElementById("tableBody");
+            let t = translations[currentLang];
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">${t.noRecordText}</td></tr>`;
+                return;
+            }
+
+            let fragment = document.createDocumentFragment();
+            let limitData = data.slice(0, 500); 
+
+            limitData.forEach(row => {
+                let tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${escapeHtml(row.Denomination)}</td>
+                    <td>${escapeHtml(row.DrawDate)}</td>
+                    <td>${escapeHtml(row.BondNo)}</td>
+                    <td>${escapeHtml(row.Series)}</td>
+                    <td>${escapeHtml(row.DrawNo)}</td>
+                    <td>${escapeHtml(row.Prize)}</td>
+                `;
+                fragment.appendChild(tr);
+            });
+
+            tbody.innerHTML = "";
+            tbody.appendChild(fragment);
+        }
+
+        function filterTableLocally() {
+            let searchText = document.getElementById("searchBondNo").value.toLowerCase();
+            let filtered = cachedBonds.filter(row => row.BondNo.toLowerCase().startsWith(searchText));
+            renderTable(filtered);
+
+            if (searchText.length === 6 && filtered.length > 0) {
+                let matchedBond = filtered[0];
+                checkAndTriggerFireworks(matchedBond.Prize);
+            }
+        }
+
+        function checkAndTriggerFireworks(prizeStr) {
+            let cleanStr = prizeStr.replace(/[^0-9.]/g, '');
+            let prizeVal = parseFloat(cleanStr) || 0;
+
+            if (prizeVal >= 100000 || prizeStr.includes('$') || prizeStr.includes('700') || prizeStr.includes('750') || prizeStr.includes('1,500') || prizeStr.includes('10,000')) {
+                triggerCSSFireworks();
+            }
+        }
+
+        function triggerCSSFireworks() {
+            const container = document.getElementById("fireworks-container");
+            const banner = document.getElementById("winnerBanner");
+            
+            container.style.display = "block";
+            container.innerHTML = "";
+            
+            banner.classList.add("show");
+
+            const colors = ['#38bdf8', '#c084fc', '#f472b6', '#fbbf24', '#4ade80', '#ffffff'];
+            
+            for (let i = 0; i < 5; i++) {
+                let startX = window.innerWidth * (0.3 + Math.random() * 0.5);
+                let startY = window.innerHeight * (0.3 + Math.random() * 0.4);
+
+                for (let j = 0; j < 45; j++) {
+                    let spark = document.createElement("div");
+                    spark.className = "firework-spark";
+                    spark.style.left = startX + "px";
+                    spark.style.top = startY + "px";
+                    spark.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+
+                    let angle = Math.random() * Math.PI * 2;
+                    let distance = Math.random() * 200 + 60;
+                    let tx = Math.cos(angle) * distance;
+                    let ty = Math.sin(angle) * distance;
+
+                    spark.style.setProperty('--tx', tx + 'px');
+                    spark.style.setProperty('--ty', ty + 'px');
+
+                    container.appendChild(spark);
+                }
+            }
+
+            setTimeout(() => {
+                container.style.display = "none";
+                container.innerHTML = "";
+                banner.classList.remove("show");
+            }, 3000);
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>
